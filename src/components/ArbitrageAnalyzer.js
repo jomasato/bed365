@@ -1,6 +1,24 @@
 import { useState } from 'react';
 import { PlusCircle, MinusCircle, AlertCircle, TrendingUp, Check, X } from 'lucide-react';
 
+// カスタムアラートコンポーネント
+const CustomAlert = ({ children, variant = 'warning' }) => {
+  const bgColor = variant === 'warning' ? 'bg-yellow-50' : 'bg-red-50';
+  const borderColor = variant === 'warning' ? 'border-yellow-400' : 'border-red-400';
+  const textColor = variant === 'warning' ? 'text-yellow-700' : 'text-red-700';
+
+  return (
+    <div className={`${bgColor} border-l-4 ${borderColor} p-4 my-4`}>
+      <div className="flex">
+        <AlertCircle className={`h-5 w-5 ${textColor}`} />
+        <div className={`ml-3 ${textColor}`}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ArbitrageAnalyzer = () => {
   const MATCH_TYPES = {
     '1x2': { name: '1x2（勝ち引き分け負け）', outcomes: ['勝ち', '引分', '負け'] },
@@ -13,47 +31,14 @@ const ArbitrageAnalyzer = () => {
     { id: 2, name: 'Pinnacle', odds: [2.10, 1.75], isEditing: false },
     { id: 3, name: 'William Hill', odds: [2.08, 1.78], isEditing: false }
   ]);
-  const [simulationAmount, setSimulationAmount] = useState(100);
+  const [actualInvestment, setActualInvestment] = useState(100);
   const [analysis, setAnalysis] = useState(null);
 
-  const toggleEdit = (bookmakerIndex) => {
-    const newBookmakers = bookmakers.map((bm, index) => ({
-      ...bm,
-      isEditing: index === bookmakerIndex ? !bm.isEditing : bm.isEditing
-    }));
-    setBookmakers(newBookmakers);
-  };
-
-  const updateBookmakerName = (bookmakerIndex, newName) => {
-    const newBookmakers = [...bookmakers];
-    newBookmakers[bookmakerIndex] = {
-      ...newBookmakers[bookmakerIndex],
-      name: newName,
-      isEditing: false
-    };
-    setBookmakers(newBookmakers);
-  };
-
-  const cancelEdit = (bookmakerIndex) => {
-    const newBookmakers = [...bookmakers];
-    newBookmakers[bookmakerIndex].isEditing = false;
-    setBookmakers(newBookmakers);
-  };
-
-  const handleMatchTypeChange = (type) => {
-    setMatchType(type);
-    const newBookmakers = bookmakers.map(bm => ({
-      ...bm,
-      odds: type === 'win_lose' ? [2.05, 1.80] : [2.05, 3.40, 1.80]
-    }));
-    setBookmakers(newBookmakers);
-    setAnalysis(null);
-  };
-
-  const calculatePayoutRate = (odds) => {
-    const impliedProbs = odds.map(odd => 1/odd);
-    const totalImpliedProb = impliedProbs.reduce((a, b) => a + b, 0);
-    return ((1 / totalImpliedProb) * 100).toFixed(2);
+  // Validation helper functions
+  const validateInvestmentAmount = (amount) => {
+    if (amount <= 0) return '投資額は0より大きい値を入力してください';
+    if (amount > 10000000) return '投資額が上限を超えています（上限：1000万円）';
+    return null;
   };
 
   const calculateArbitrage = () => {
@@ -61,6 +46,7 @@ const ArbitrageAnalyzer = () => {
     const bestOdds = [];
     const bestSites = [];
     
+    // Find best odds for each outcome
     for (let i = 0; i < odds[0].length; i++) {
       let maxOdd = Math.max(...odds.map(row => row[i]));
       let maxSiteIndex = odds.findIndex(row => row[i] === maxOdd);
@@ -68,29 +54,39 @@ const ArbitrageAnalyzer = () => {
       bestSites.push(bookmakers[maxSiteIndex].name);
     }
     
+    // Calculate implied probabilities and total probability
     const impliedProb = bestOdds.map(odd => 1/odd);
     const totalImpliedProb = impliedProb.reduce((a, b) => a + b, 0);
-    const maxProfitRate = 1 - totalImpliedProb;
     
-    const totalInvestment = simulationAmount / (1 - totalImpliedProb);
-    const stakes = impliedProb.map(prob => (prob * totalInvestment).toFixed(2));
-    const expectedReturn = (totalInvestment * maxProfitRate).toFixed(2);
+    // Calculate minimum required investment and profit rate
+    const profitRate = ((1 - totalImpliedProb) * 100).toFixed(2);
+    const minRequiredInvestment = (100 / (1 - totalImpliedProb)).toFixed(2);
     
-    // ブックメーカーごとの配当率を計算
+    // Calculate stakes and expected profit based on actual investment
+    const actualTotal = parseFloat(actualInvestment);
+    const stakes = impliedProb.map(prob => 
+      (prob * actualTotal / totalImpliedProb).toFixed(2)
+    );
+    
+    const expectedProfit = (actualTotal * (1 - totalImpliedProb) / totalImpliedProb).toFixed(2);
+    
+    // Calculate payout rates for each bookmaker
     const bookmakerPayoutRates = bookmakers.map(bm => ({
       name: bm.name,
-      payoutRate: calculatePayoutRate(bm.odds)
+      payoutRate: ((1 / bm.odds.reduce((a, b) => a + 1/b, 0)) * 100).toFixed(2)
     }));
     
     setAnalysis({
       bestOdds,
       bestSites,
       stakes,
-      totalInvestment: totalInvestment.toFixed(2),
-      expectedReturn,
-      profitRate: (maxProfitRate * 100).toFixed(2),
+      minRequiredInvestment,
+      actualInvestment: actualTotal.toFixed(2),
+      expectedProfit,
+      profitRate,
       hasArbitrage: totalImpliedProb < 1,
-      bookmakerPayoutRates  // この行を追加
+      bookmakerPayoutRates,
+      isInvestmentValid: parseFloat(actualInvestment) >= parseFloat(minRequiredInvestment)
     });
   };
 
@@ -98,45 +94,40 @@ const ArbitrageAnalyzer = () => {
     <div className="bg-white rounded-lg shadow-md p-6">
       <h2 className="text-xl font-bold mb-4">分析結果</h2>
       {!analysis.hasArbitrage ? (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-          <div className="flex">
-            <AlertCircle className="h-5 w-5 text-yellow-400" />
-            <p className="ml-3 text-yellow-700">
-              裁定取引の機会は見つかりませんでした
-            </p>
-          </div>
-        </div>
+        <CustomAlert>
+          裁定取引の機会は見つかりませんでした
+        </CustomAlert>
       ) : (
         <div className="space-y-6">
           <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="text-lg font-semibold mb-3">投資シミュレーション</h3>
+            <h3 className="text-lg font-semibold mb-3">投資分析</h3>
             <div className="flex items-center gap-4 mb-4">
               <input
                 type="number"
-                value={simulationAmount}
+                value={actualInvestment}
                 onChange={(e) => {
-                  setSimulationAmount(Number(e.target.value));
+                  setActualInvestment(Number(e.target.value));
                   calculateArbitrage();
                 }}
                 className="w-32 p-2 border rounded"
                 min="1"
+                max="10000000"
                 step="100"
               />
-              <span className="text-gray-600">円での投資シミュレーション</span>
+              <span className="text-gray-600">円の実際の投資額</span>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-600">必要総投資額:</span>
-                <span className="ml-2 font-semibold">{analysis.totalInvestment}円</span>
-              </div>
-              <div>
-                <span className="text-gray-600">期待収益:</span>
-                <span className="ml-2 font-semibold">{analysis.expectedReturn}円</span>
-              </div>
-              <div>
-                <span className="text-gray-600">利益率:</span>
-                <span className="ml-2 font-semibold">{analysis.profitRate}%</span>
-              </div>
+
+            {!analysis.isInvestmentValid && (
+              <CustomAlert>
+                裁定取引を成立させるには、最低{analysis.minRequiredInvestment}円の投資が必要です
+              </CustomAlert>
+            )}
+
+            <div className="space-y-2 bg-gray-50 p-4 rounded-md">
+              <p className="text-gray-700">必要最小投資額: {analysis.minRequiredInvestment}円</p>
+              <p className="text-gray-700">実際の投資額: {analysis.actualInvestment}円</p>
+              <p className="text-gray-700">期待利益率: {analysis.profitRate}%</p>
+              <p className="text-gray-700">期待利益額: {analysis.expectedProfit}円</p>
             </div>
           </div>
 
@@ -182,6 +173,40 @@ const ArbitrageAnalyzer = () => {
       )}
     </div>
   );
+
+  const toggleEdit = (bookmakerIndex) => {
+    const newBookmakers = bookmakers.map((bm, index) => ({
+      ...bm,
+      isEditing: index === bookmakerIndex ? !bm.isEditing : bm.isEditing
+    }));
+    setBookmakers(newBookmakers);
+  };
+
+  const updateBookmakerName = (bookmakerIndex, newName) => {
+    const newBookmakers = [...bookmakers];
+    newBookmakers[bookmakerIndex] = {
+      ...newBookmakers[bookmakerIndex],
+      name: newName,
+      isEditing: false
+    };
+    setBookmakers(newBookmakers);
+  };
+
+  const cancelEdit = (bookmakerIndex) => {
+    const newBookmakers = [...bookmakers];
+    newBookmakers[bookmakerIndex].isEditing = false;
+    setBookmakers(newBookmakers);
+  };
+
+  const handleMatchTypeChange = (type) => {
+    setMatchType(type);
+    const newBookmakers = bookmakers.map(bm => ({
+      ...bm,
+      odds: type === 'win_lose' ? [2.05, 1.80] : [2.05, 3.40, 1.80]
+    }));
+    setBookmakers(newBookmakers);
+    setAnalysis(null);
+  };
 
   const updateOdds = (bookmakerIndex, outcomeIndex, value) => {
     const newBookmakers = [...bookmakers];
@@ -289,40 +314,42 @@ const ArbitrageAnalyzer = () => {
                   </td>
                   {bm.odds.map((odd, oddIndex) => (
                     <td key={oddIndex} className="px-6 py-4 whitespace-nowrap text-center">
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={odd}
-                        onChange={(e) => updateOdds(bmIndex, oddIndex, e.target.value)}
-                        className="w-20 p-1 border rounded text-center"
-                      />
-                    </td>
-                  ))}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button
-                      onClick={() => removeBookmaker(bmIndex)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <MinusCircle className="h-4 w-4" /></button>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1.01"
+                      value={odd}
+                      onChange={(e) => updateOdds(bmIndex, oddIndex, e.target.value)}
+                      className="w-20 p-1 border rounded text-center"
+                    />
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        <button
-          onClick={addBookmaker}
-          className="mt-4 flex items-center text-blue-600 hover:text-blue-700 px-4 py-2 border border-blue-600 rounded-md"
-        >
-          <PlusCircle className="mr-2 h-4 w-4" />
-          ブックメーカー追加
-        </button>
+                ))}
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <button
+                    onClick={() => removeBookmaker(bmIndex)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <MinusCircle className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {analysis && renderAnalysisResults()}
+      
+      <button
+        onClick={addBookmaker}
+        className="mt-4 flex items-center text-blue-600 hover:text-blue-700 px-4 py-2 border border-blue-600 rounded-md"
+      >
+        <PlusCircle className="mr-2 h-4 w-4" />
+        ブックメーカー追加
+      </button>
     </div>
-  );
+
+    {analysis && renderAnalysisResults()}
+  </div>
+);
 };
 
 export default ArbitrageAnalyzer;
