@@ -2,6 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import ArbitrageAnalyzer from './components/ArbitrageAnalyzer';
+import AdContentLayout from './AdContentLayout.js';
+import { Analytics } from '@vercel/analytics/react';
 
 const container = document.getElementById('root');
 const root = createRoot(container);
@@ -16,9 +18,12 @@ root.render(
           </h1>
         </div>
       </header>
-      <main>
-        <ArbitrageAnalyzer />
+      <main className="py-6">
+          <ArbitrageAnalyzer />
       </main>
+      <Analytics />
     </div>
   </React.StrictMode>
 );
+
+//        </AdContentLayout>で広告表示
